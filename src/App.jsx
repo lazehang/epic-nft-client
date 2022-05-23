@@ -9,9 +9,14 @@ const TWITTER_HANDLE = 'lazeh4ng';
 const TWITTER_LINK = `https://twitter.com/${TWITTER_HANDLE}`;
 const OPENSEA_LINK = 'https://testnets.opensea.io/collection/squarenft-om7oooqhyo';
 const TOTAL_MINT_COUNT = 50;
+const CONTRACT_ADDRESS = import.meta.env.VITE_CONTRACT_ADDRESS;
 
 const App = () => {
   const [currentAccount, setCurrentAccount] = useState("");
+
+  const [loading, setLoading] = useState(false);
+
+  const [nftLinks, setNftLinks] = useState([])
   
   const checkIfWalletIsConnected = async () => {
     /*
@@ -35,7 +40,6 @@ const App = () => {
       const account = accounts[0];
       console.log("Found an authorized account:", account);
       setCurrentAccount(account);
-      setupEventListener()
     } else {
       console.log("No authorized account found");
     }
@@ -68,7 +72,6 @@ const App = () => {
       */
       console.log("Connected", accounts[0]);
       setCurrentAccount(accounts[0]);
-      setupEventListener()
     } catch (error) {
       console.log(error);
     }
@@ -80,13 +83,12 @@ const App = () => {
     </button>
   );
 
-  const askContractToMintNft = async () => {
-    const CONTRACT_ADDRESS = "0xBCa77508416efdA68d7962A14Afc30efAc16c469";
-  
+  const askContractToMintNft = async () => {  
     try {
       const { ethereum } = window;
   
       if (ethereum) {
+        setLoading(true)
         const provider = new ethers.providers.Web3Provider(ethereum);
         const signer = provider.getSigner();
         const connectedContract = new ethers.Contract(CONTRACT_ADDRESS, myEpicNft.abi, signer);
@@ -96,45 +98,52 @@ const App = () => {
   
         console.log("Mining...please wait.")
         await nftTxn.wait();
-        
         console.log(`Mined, see transaction: https://rinkeby.etherscan.io/tx/${nftTxn.hash}`);
-  
       } else {
         console.log("Ethereum object doesn't exist!");
       }
     } catch (error) {
       console.log(error)
+    } finally {
+      setLoading(false)
     }
   }
 
-  const setupEventListener = async () => {
-    // Most of this looks the same as our function askContractToMintNft
-    try {
-      const { ethereum } = window;
+  useEffect(() => {
+    let connectedContract
 
-      if (ethereum) {
-        // Same stuff again
-        const provider = new ethers.providers.Web3Provider(ethereum);
-        const signer = provider.getSigner();
-        const connectedContract = new ethers.Contract(CONTRACT_ADDRESS, myEpicNft.abi, signer);
-
-        // THIS IS THE MAGIC SAUCE.
-        // This will essentially "capture" our event when our contract throws it.
-        // If you're familiar with webhooks, it's very similar to that!
-        connectedContract.on("NewEpicNFTMinted", (from, tokenId) => {
-          console.log(from, tokenId.toNumber())
-          alert(`Hey there! We've minted your NFT and sent it to your wallet. It may be blank right now. It can take a max of 10 min to show up on OpenSea. Here's the link: https://testnets.opensea.io/assets/${CONTRACT_ADDRESS}/${tokenId.toNumber()}`)
-        });
-
-        console.log("Setup event listener!")
-
-      } else {
-        console.log("Ethereum object doesn't exist!");
-      }
-    } catch (error) {
-      console.log(error)
+    const onNewNftMinted = (from, tokenId) => {
+      console.log(from, tokenId.toNumber())
+      console.log(`Hey there! We've minted your NFT and sent it to your wallet. It may be blank right now. It can take a max of 10 min to show up on OpenSea. Here's the link: https://testnets.opensea.io/assets/${CONTRACT_ADDRESS}/${tokenId.toNumber()}`)
+      setNftLinks(prevState => {
+        return [
+          ...prevState,
+          `https://testnets.opensea.io/assets/${CONTRACT_ADDRESS}/${tokenId.toNumber()}`
+        ]
+      })
     }
-  }
+
+    const { ethereum } = window;
+
+    if (ethereum) {
+      const provider = new ethers.providers.Web3Provider(ethereum);
+      const signer = provider.getSigner();
+      connectedContract = new ethers.Contract(CONTRACT_ADDRESS, myEpicNft.abi, signer);
+
+      connectedContract.on("NewEpicNFTMinted", onNewNftMinted);
+
+      console.log("Setup event listener!")
+
+    } else {
+      console.log("Ethereum object doesn't exist!");
+    }
+
+    return () => {
+        if (connectedContract) {
+          connectedContract.off('NewEpicNFTMinted', onNewNftMinted)
+        }
+    }
+  }, [])
 
   useEffect(() => {
     checkIfWalletIsConnected()
@@ -151,9 +160,8 @@ const App = () => {
           {currentAccount === "" 
             ? renderNotConnectedContainer()
             : (
-              /** Add askContractToMintNft Action for the onClick event **/
-              <button onClick={askContractToMintNft} className="cta-button connect-wallet-button">
-                Mint NFT
+              <button disabled={loading} onClick={askContractToMintNft} className="cta-button connect-wallet-button">
+                { loading ? 'Minting...' : 'Mint NFT' }
               </button>
             )
           }
@@ -162,12 +170,23 @@ const App = () => {
               target="_blank"
               rel="noreferrer"
               href={OPENSEA_LINK}
-              style={{ color: '#fff', textDecoration: 'none' }}
+              style={{ color: '#fff', textDecoration: 'underline' }}
             >
               <span role="img" aria-label="open sea emoji" style={{ paddingRight: '5px', verticalAlign: 'bottom' }}>🌊</span> View Collection on OpenSea
             </a>
           </div>
         </div>
+
+        <div>
+          <ul style={{ listTypeStyle: 'none', paddingInlineStart: 0, maxWidth: '500px', margin: '0 auto'}}>
+            {nftLinks.map((link, index) => (
+              <li key={index} style={{ display: 'inline-block', padding: '0.5rem', border: '1px solid rgb(71 184 166)', borderRadius: '5px', marginBottom: '10px' }}>
+                <a href={link} target="_blank" rel="noreferrer" style={{ color: '#03a9f4', outline: 'none', textDecoration: 'none', wordBreak: 'break-word' }}>{link}</a>
+              </li>
+            ))}
+          </ul>
+        </div>
+
         <div className="footer-container">
           <img alt="Twitter Logo" className="twitter-logo" src={twitterLogo} />
           <a
